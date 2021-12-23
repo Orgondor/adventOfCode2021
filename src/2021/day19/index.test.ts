@@ -7,6 +7,8 @@ import {
   point3dMatrixMultiply,
   point3dAdd,
   point3dToString,
+  point3dLength,
+  point3dManhattanLength,
 } from "../util";
 
 type Transformation = {
@@ -16,8 +18,10 @@ type Transformation = {
 
 type ScannerData = {
   name: string;
+  position: Point3d;
   beaconList: Point3d[];
   beaconMap: Record<string, boolean>;
+  distances: number[];
   overlapsWith?: ScannerData;
   transformation?: Transformation;
 };
@@ -28,7 +32,13 @@ describe("day 19", () => {
 
   beforeAll(() => {
     scannerData = data.split("\n\n").map((data): ScannerData => {
-      const tmpData: ScannerData = { name: "", beaconList: [], beaconMap: {} };
+      const tmpData: ScannerData = {
+        name: "",
+        position: { x: 0, y: 0, z: 0 },
+        distances: [],
+        beaconList: [],
+        beaconMap: {},
+      };
       data
         .split("\n")
         .filter((row) => {
@@ -50,6 +60,19 @@ describe("day 19", () => {
       return tmpData;
     });
 
+    scannerData.forEach((data) => {
+      data.beaconList.forEach((beacon1, i) => {
+        let closest = Infinity;
+        data.beaconList.forEach((beacon2, j) => {
+          if (i !== j) {
+            const dist = point3dLength(point3dSubtract(beacon1, beacon2));
+            closest = Math.min(closest, dist);
+          }
+        });
+        data.distances.push(closest);
+      });
+    });
+
     beaconMap = { ...scannerData[0].beaconMap };
 
     const addToMap = (point: Point3d, from: ScannerData) => {
@@ -64,6 +87,27 @@ describe("day 19", () => {
       }
 
       beaconMap[point3dToString(tranformed)] = true;
+    };
+
+    const addPosition = (
+      point: Point3d,
+      from: ScannerData,
+      positionOf: ScannerData
+    ) => {
+      let tranformed = point;
+      if (from.transformation) {
+        tranformed = point3dAdd(
+          from.transformation.translation,
+          point3dMatrixMultiply(point, from.transformation.rotation)
+        );
+      }
+
+      if (from.overlapsWith) {
+        addPosition(tranformed, from.overlapsWith, positionOf);
+        return;
+      }
+
+      positionOf.position = tranformed;
     };
 
     const identity = [
@@ -112,58 +156,103 @@ describe("day 19", () => {
     const matchedAgainst: string[] = [];
     while (unmatched.length) {
       unmatched.forEach((testData) => {
-        rotations.some((rotation) =>
-          matchingAgainst.beaconList.some((beacon) =>
-            testData.beaconList.some((testPoint, i) => {
-              const translation = point3dSubtract(
-                beacon,
-                point3dMatrixMultiply(testPoint, rotation)
-              );
+        let sameDistances = 0;
+        testData.distances.forEach((dist1) => {
+          if (
+            matchingAgainst.distances.some(
+              (dist2) => Math.abs(dist1 - dist2) < 1e-14
+            )
+          ) {
+            sameDistances++;
+          }
+        });
 
-              let matches = 1;
-              const doesMatch = testData.beaconList.some((matchTest, j) => {
-                if (
-                  i !== j &&
-                  matchingAgainst.beaconMap[
-                    point3dToString(
-                      point3dAdd(
-                        translation,
-                        point3dMatrixMultiply(matchTest, rotation)
+        if (sameDistances > 5) {
+          rotations.some((rotation) =>
+            matchingAgainst.beaconList.some((beacon) =>
+              testData.beaconList.some((testPoint, i) => {
+                const translation = point3dSubtract(
+                  beacon,
+                  point3dMatrixMultiply(testPoint, rotation)
+                );
+
+                let matches = 1;
+                const doesMatch = testData.beaconList.some((matchTest, j) => {
+                  if (
+                    i !== j &&
+                    matchingAgainst.beaconMap[
+                      point3dToString(
+                        point3dAdd(
+                          translation,
+                          point3dMatrixMultiply(matchTest, rotation)
+                        )
                       )
-                    )
-                  ]
-                ) {
-                  matches++;
-                  return matches >= 12;
-                }
-              });
-
-              if (doesMatch) {
-                testData.overlapsWith = matchingAgainst;
-                testData.transformation = {
-                  rotation,
-                  translation,
-                };
-
-                testData.beaconList.forEach((point) => {
-                  addToMap(point, testData);
+                    ]
+                  ) {
+                    matches++;
+                    return matches >= 12;
+                  }
                 });
-              }
-              return doesMatch;
-            })
-          )
-        );
+
+                if (doesMatch) {
+                  testData.overlapsWith = matchingAgainst;
+                  testData.transformation = {
+                    rotation,
+                    translation,
+                  };
+
+                  testData.beaconList.forEach((point) => {
+                    addToMap(point, testData);
+                  });
+
+                  addPosition(
+                    testData.transformation.translation,
+                    testData.overlapsWith,
+                    testData
+                  );
+                }
+                return doesMatch;
+              })
+            )
+          );
+        }
       });
 
-      unmatched = scannerData.slice(1).filter((data) => !data.overlapsWith);
+      unmatched = scannerData
+        .slice(1)
+        .filter((scanData) => !scanData.overlapsWith);
       matchedAgainst.push(matchingAgainst.name);
-      matchingAgainst = scannerData.filter(
-        (data) => data.overlapsWith && !matchedAgainst.includes(data.name)
-      )[0];
+      const toMatchAgainst = scannerData.filter(
+        (scanData) =>
+          scanData.overlapsWith && !matchedAgainst.includes(scanData.name)
+      );
+
+      if (!toMatchAgainst.length) {
+        throw new Error("Nothing to match against");
+      }
+
+      matchingAgainst = toMatchAgainst[0];
     }
   });
 
   it("1", () => {
     console.log("answer:", Object.keys(beaconMap).length);
+  });
+
+  it("2", () => {
+    let largestDistance = 0;
+    scannerData.forEach((scanData1, i) => {
+      scannerData.forEach((scanData2, j) => {
+        if (i !== j) {
+          largestDistance = Math.max(
+            largestDistance,
+            point3dManhattanLength(
+              point3dSubtract(scanData1.position, scanData2.position)
+            )
+          );
+        }
+      });
+    });
+    console.log("answer:", largestDistance);
   });
 });

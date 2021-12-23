@@ -1,4 +1,4 @@
-import { Matrix, matrixMultiply, matrixTranspose } from ".";
+import { Matrix, matrixMultiply, matrixTranspose, sum } from ".";
 
 export type Point3d = {
   x: number;
@@ -49,6 +49,26 @@ export const point3dSubtract = (a: Point3d, b: Point3d): Point3d => {
     y: a.y - b.y,
     z: a.z - b.z,
   };
+};
+
+export const point3dScale = (point: Point3d, scale: number): Point3d => {
+  return {
+    x: point.x * scale,
+    y: point.y * scale,
+    z: point.z * scale,
+  };
+};
+
+export const point3dLength = (point: Point3d): number => {
+  return Math.sqrt(dot(point, point));
+};
+
+export const point3dManhattanLength = (point: Point3d): number => {
+  return Math.abs(point.x) + Math.abs(point.y) + Math.abs(point.z);
+};
+
+export const point3dNormalize = (point: Point3d): Point3d => {
+  return point3dScale(point, 1 / point3dLength(point));
 };
 
 export const point3dEqual = (a: Point3d, b: Point3d): boolean => {
